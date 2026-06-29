@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Passport Tracking</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; background-color: transparent; }
+        .search-container {
+            max-width: 100%;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-sizing: border-box;
+        }
+        h2 {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            font-size: 20px;
+            letter-spacing: 0.5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #444;
+            font-size: 14px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .result-message { margin-top: 15px; padding: 12px; border-radius: 4px; font-size: 14px; display: none; line-height: 1.5; }
+        .result-message.success { display: block; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .result-message.fail { display: block; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .result-message.error { display: block; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .arabic-text { display: block; direction: rtl; text-align: right; margin-top: 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="search-container">
+    <h2>Biometric Passport Tracking</h2>
+    
+    <label for="lastNameInput">Last Name / اللقب</label>
+    <input type="text" id="lastNameInput" placeholder="e.g., AAAAAA" autocomplete="off">
+
+    <label for="trackingInput">Tracking Number / رقم التسجيل</label>
+    <input type="text" id="trackingInput" placeholder="e.g., 23012026" autocomplete="off">
+
+    <label for="dobInput">Date of Birth / تاريخ الميلاد</label>
+    <input type="text" id="dobInput" placeholder="e.g., 15041995 (DDMMYYYY)" autocomplete="off">
+
+    <button onclick="checkDocument()">Verify Your Document</button>
+    <div id="resultMessage" class="result-message"></div>
+</div>
+
+<script>
+function cleanNumericInput(inputVal) {
+    let converted = inputVal.replace(/[٠-٩]/g, function (d) {
+        return d.charCodeAt(0) - 1632;
+    });
+    return converted.replace(/\D/g, '');
+}
+
+async function checkDocument() {
+    let lastName = document.getElementById("lastNameInput").value.trim().toUpperCase();
+    let trackingNum = cleanNumericInput(document.getElementById("trackingInput").value.trim()).replace(/^0+/, '');
+    let dob = cleanNumericInput(document.getElementById("dobInput").value.trim());
+
+    let resultDiv = document.getElementById("resultMessage");
+    resultDiv.innerHTML = "";
+    resultDiv.className = "result-message";
+    
+    if (!trackingNum && !dob) {
+        resultDiv.innerHTML = "Please enter either a Tracking Number or Date of Birth.<br>الرجاء إدخال إما رقم التسجيل أو تاريخ الميلاد.";
+        resultDiv.classList.add("error");
+        return;
+    }
+
+    if (dob && !lastName) {
+        resultDiv.innerHTML = "Last Name is mandatory when searching by Date of Birth.<br>اللقب إلزامي عند البحث باستخدام تاريخ الميلاد.";
+        resultDiv.classList.add("error");
+        return;
+    }
+    
+    try {
+        const response = await fetch('database.txt?t=' + new Date().getTime());
+        if (!response.ok) throw new Error("Could not load database file.");
+        
+        const textData = await response.text();
+        const lines = textData.split('\n');
+        const recordDatabase = [];
+        
+        lines.forEach(line => {
+            if(line.includes('|')) {
+                let parts = line.split('|');
+                let dbTracking = parts[0] ? parts[0].trim().replace(/\D/g, '').replace(/^0+/, '') : '';
+                
+                recordDatabase.push({
+                    tracking: dbTracking,
+                    dob: parts[1] ? parts[1].trim() : '',
+                    lastName: parts[2] ? parts[2].trim().toUpperCase() : '',
+                    firstName: parts[3] ? parts[3].trim().toUpperCase() : ''
+                });
+            }
+        });
+
+        let matches = [];
+
+        if (trackingNum) {
+            matches = recordDatabase.filter(record => record.tracking === trackingNum);
+            if (lastName) {
+                matches = matches.filter(record => record.lastName === lastName);
+            }
+            if (dob) {
+                matches = matches.filter(record => record.dob === dob);
+            }
+        } else if (dob && lastName) {
+            matches = recordDatabase.filter(record => record.dob === dob && record.lastName === lastName);
+        }
+
+        // --- FIXED SUCCESS MESSAGE (REMOVED NAMES) ---
+        if (matches.length > 0) {
+            resultDiv.innerHTML = "✓ Match Found: Your Document ready for collection.<span class='arabic-text'>الوثيقة البيومترية الخاصة بك جاهزة لدى المصالح القنصلية</span>";
+            resultDiv.classList.add("success");
+        } else {
+            resultDiv.innerHTML = "✗ Not Found: Document not available based on your search inputs.<span class='arabic-text'>الوثيقة البيومترية غير جاهزة بناءً على معطيات البحث</span>";
+            resultDiv.classList.add("fail");
+        }
+
+    } catch (error) {
+        resultDiv.innerHTML = "Error connecting to the database. Please try again later.";
+        resultDiv.classList.add("error");
+        console.error(error);
+    }
+}
+</script>
+
+</body>
+</html>
